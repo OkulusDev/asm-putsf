@@ -22,26 +22,14 @@ format ELF64							; указываем 64 битный линуксовый ф�
 
 public _start
 
+section '.data' writeable				; метка данных, доступна для записи
+	string db "PutsF", 0xA, 0			; строка
+
 section '.text' executable				; текстовая секция, выполняемая
 _start:									; метка старта
-	mov rax, 'P'						; перемещаем в регистр rax символ P
-	call puts_char
-
-	; Повторяем данную операцию, пока не выведем всю строку (PUTSF)
-	mov rax, 'u'
-	call puts_char
-
-	mov rax, 't'
-	call puts_char
-
-	mov rax, 's'
-	call puts_char
-
-	mov rax, 'F'
-	call puts_char
+	mov rax, string						; перемещаем в регистр rax строку
+	call puts_string
 	
-	mov rax, 0xA
-	call puts_char
 exit:									; метка выхода
 	mov rax, 60
 	xor rdi, rdi
@@ -71,8 +59,28 @@ puts_char:								; метка вывода символа
 
 	ret
 
-section '.do_syscall' executable		; метка вызова сисвызова
-do_syscall:
+section '.puts_string' executable		; секция вывода строки
+; Ввод:
+;  rax = string (регистр rax = строка для вывода)
+puts_string:							; метка вывода строки
+	push rbx
+	xor rbx, rbx
+
+	.next_iter:
+		cmp [rax+rbx], byte 0
+		je .close
+		push rax
+		mov rax, [rax+rbx]
+		call puts_char
+		pop rax
+		inc rbx
+		jmp .next_iter
+	.close:
+		pop rbx
+		ret
+
+section '.do_syscall' executable		; секция сисвызова
+do_syscall:								; метка сисвызова
 	push rcx
 	push r11
 

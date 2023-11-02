@@ -11,7 +11,7 @@ CODE=putsf.asm
 CODE_OUTPUT=putsf.o
 BIN=putsf.elf64
 
-.phony: build clean run
+.phony: build clean run clean_all
 
 build:
 	$(ASM) $(SRC_DIR)/$(CODE) $(BIN_DIR)/$(CODE_OUTPUT)
