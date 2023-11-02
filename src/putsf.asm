@@ -23,134 +23,11 @@ format ELF64							; указываем 64 битный линуксовый ф�
 ; Регистр RAX это дополнение EAX, EAX это дополнение AX, AX это дополнение 2
 ; регистров AH и AL
 
-public _start
+include "puts_decimal.asm"
+include "puts_string.asm"
+include "puts_char.asm"
 
-;extrn putsf
-
-section '.data' writeable				; метка данных, доступна для записи
-	input db "{ %s, %d, %c }", 0xA, 0	
-	string db "Puts F ",  0				; строка
-	decimal dq 123
-	symbol dq '$'
-
-section '.text' executable				; текстовая секция, выполняемая
-_start:									; метка старта
-	mov rax, input
-	push [symbol]
-	push [decimal]
-	push string
-	call putsf
-exit:									; метка выхода
-	mov rax, 60
-	xor rdi, rdi
-	syscall
-
-section '.puts_char' executable			; секция вывода символа
-; Ввод:
-;  rax = char (регистр rax = символ)
-puts_char:								; метка вывода символа
-	push rax
-	push rdx
-	push rsi
-	push rdi
-	push rax
-
-	mov rsi, rsp
-	mov rdi, 1
-	mov rdx, 1
-	mov rax, 1
-	call do_syscall						; вызываем метку do_syscall
-
-	pop rax
-	pop rdi
-	pop rsi
-	pop rdx
-	pop rax
-
-	ret
-
-section '.puts_string' executable		; секция вывода строки
-; Ввод:
-;  rax = string (регистр rax = строка для вывода)
-puts_string:							; метка вывода строки
-	push rbx
-	xor rbx, rbx
-
-	.next_iter:
-		cmp [rax+rbx], byte 0
-		je .close
-		push rax
-		mov rax, [rax+rbx]
-		call puts_char
-		pop rax
-		inc rbx
-		jmp .next_iter
-	.close:
-		pop rbx
-		ret
-
-section '.puts_decimal' executable		; секция вывода числа
-; Ввод:
-;  rax - число
-puts_decimal:							; метка вывода числа
-	; Стоит учитывать, что данная метка работает только с 64-битными числами, и
-	; следовательно, и отрицательное число она будет трактовать если оно будет
-	; 64-битным. В противном случае, если число будет 32 битное, то оно со
-	; стороны 64-битного числа будет трактоваться как unsigned (число без знака) 
-	; Алгоритм:	
-	; 1. Если число меньше нуля, то напечать символ минус.
-	; 2. Разделить число на 10, взять частное и остаток от деления
-	; 3. Положить остаток в стек
-	; 4. Инкрементировать значение i (i++)
-	; 5. Если частное не равно 0, тогда перейти на 2 пункт
-	; 6. Если значение i равно 0, тогда закрыть выполнение
-	; 7. Выгрузить число из стека (остаток)
-	; 8. Привать к остатку символ '0' (число 48 по ASCII)
-	; 9. Напечатать получившийся символ (puts_char)
-	; 10. Декрементировать значение i (i--)
-	; 11. Перейти на пункт 6
-	push rax
-    push rbx
-    push rcx
-    push rdx
-    xor rcx, rcx
-    cmp rax, 0
-    
-	jl .is_minus
-    jmp .next_iter
-
-    .is_minus:
-        neg rax
-        push rax
-        mov rax, '-'
-        call puts_char
-        pop rax
-
-    .next_iter:
-        mov rbx, 10
-        xor rdx, rdx
-        div rbx
-        push rdx
-        inc rcx
-        cmp rax, 0
-        je .puts_iter
-        jmp .next_iter
-
-    .puts_iter:
-        cmp rcx, 0
-        je .close
-        pop rax
-        add rax, '0'
-        call puts_char
-        dec rcx
-        jmp .puts_iter
-
-    .close:
-        pop rdx
-        pop rcx
-        pop rbx
-        pop rax
-        ret
+public putsf
 
 section '.putsf' executable				; секция putsf
 ; Ввод:
@@ -176,81 +53,65 @@ putsf:									; метка putsf
 	; 13. Инкрементировать значение i
 	; 14. Перейти на пункт 1
 	push rbx
-	push rcx
+    push rcx
 
-	; call/ret			= 8 байт
-	; rax+rbx+rcx		= 24 байт
-	; Итого: 24 + 8 = 32
-	mov rbx, 32
+    ; call/ret    = 8byte
+    ; rax+rbx+rcx = 24byte
+    mov rbx, 32
 
-	; Число элементов формата
-	xor rcx, rcx
-
-	.next_iter:
-		cmp [rax], byte 0
-		je .close
-		cmp [rax], byte '%'
-		je .special_char
-		jmp .default_char
-
-		.special_char:
-			inc rax
-			cmp [rax], byte 's'
-			je .puts_string
-			cmp [rax], byte 'd'
-			je .puts_decimal
-			cmp [rax], byte 'c'
-			je .puts_char
-			cmp [rax], byte '%'
-			je .default_char
-
-			jmp .is_error
-		.puts_string:
-			push rax
-			mov rax, [rsp+rbx]
-			call puts_string
-			pop rax
-			jmp .shift_stack
-		.puts_decimal:
-			push rax
-			mov rax, [rsp+rbx]
-			call puts_decimal
-			pop rax
-			jmp .shift_stack
-		.puts_char:
-			push rax
-			mov rax, [rax]
-			call puts_char
-			pop rax
-			jmp .next_step
-		.default_char:
-			push rax
-			mov rax, [rax]
-			call puts_char
-			pop rax
-			jmp .next_step
-		.shift_stack:
-			inc rcx
-			add rbx, 8
-		.next_step:
-			inc rax
-			jmp .next_iter
-	.is_error:
-		mov rcx, -1
-	.close:
-		mov rax, rcx
-		pop rcx
-		pop rbx
-		ret
-
-section '.do_syscall' executable		; секция сисвызова
-do_syscall:								; метка сисвызова
-	push rcx
-	push r11
-
-	syscall
-	
-	pop r11
-	pop rcx
-
-	ret
+    ; count of format elements
+    xor rcx, rcx 
+    .next_iter:
+        cmp [rax], byte 0
+        je .close
+        cmp [rax], byte '%'
+        je .special_char
+        jmp .default_char
+        .special_char:
+            inc rax
+            cmp [rax], byte 's'
+            je .print_string
+            cmp [rax], byte 'd'
+            je .print_decimal
+            cmp [rax], byte 'c'
+            je .print_char
+            cmp [rax], byte '%'
+            je .default_char
+            jmp .is_error
+        .print_string:
+            push rax
+            mov rax, [rsp+rbx]
+            call puts_string
+            pop rax
+            jmp .shift_stack
+        .print_decimal:
+            push rax
+            mov rax, [rsp+rbx]
+            call puts_decimal
+            pop rax
+            jmp .shift_stack
+        .print_char:
+            push rax
+            mov rax, [rsp+rbx]
+            call puts_char
+            pop rax
+            jmp .shift_stack
+        .default_char:
+            push rax
+            mov rax, [rax]
+            call puts_char
+            pop rax
+            jmp .next_step
+        .shift_stack:
+            inc rcx
+            add rbx, 8
+        .next_step:
+            inc rax
+            jmp .next_iter
+    .is_error:
+        mov rcx, -1
+    .close:
+        mov rax, rcx
+        pop rcx
+        pop rbx
+        ret
